@@ -14,6 +14,7 @@ require 'mustermann/sinatra'
 require 'mustermann/regular'
 
 # stdlib dependencies
+require 'ipaddr'
 require 'time'
 require 'uri'
 
@@ -21,6 +22,8 @@ require 'uri'
 require 'sinatra/indifferent_hash'
 require 'sinatra/show_exceptions'
 require 'sinatra/version'
+
+require_relative 'middleware/logger'
 
 module Sinatra
   # The request object. See Rack::Request for more info:
@@ -61,7 +64,7 @@ module Sinatra
     alias secure? ssl?
 
     def forwarded?
-      @env.include? 'HTTP_X_FORWARDED_HOST'
+      !forwarded_authority.nil?
     end
 
     def safe?
@@ -294,7 +297,7 @@ module Sinatra
         def block.each; yield(call) end
         response.body = block
       elsif value
-        unless request.head? || value.is_a?(Rack::Files::Iterator) || value.is_a?(Stream)
+        unless request.head? || value.is_a?(Rack::Files::BaseIterator) || value.is_a?(Stream)
           headers.delete 'content-length'
         end
         response.body = value
@@ -972,7 +975,7 @@ module Sinatra
     include Helpers
     include Templates
 
-    URI_INSTANCE = URI::Parser.new
+    URI_INSTANCE = defined?(URI::RFC2396_PARSER) ? URI::RFC2396_PARSER : URI::RFC2396_Parser.new
 
     attr_accessor :app, :env, :request, :response, :params
     attr_reader   :template_cache
@@ -1292,7 +1295,7 @@ module Sinatra
         /active_support/,                                   # active_support require hacks
         %r{bundler(/(?:runtime|inline))?\.rb},              # bundler require hacks
         /<internal:/,                                       # internal in ruby >= 1.9.2
-        %r{zeitwerk/kernel\.rb}                             # Zeitwerk kernel#require decorator
+        %r{zeitwerk/(core_ext/)?kernel\.rb}                 # Zeitwerk kernel#require decorator
       ].freeze
 
       attr_reader :routes, :filters, :templates, :errors, :on_start_callback, :on_stop_callback
@@ -1598,20 +1601,20 @@ module Sinatra
       alias stop! quit!
 
       # Run the Sinatra app as a self-hosted server using
-      # Puma, Falcon, or WEBrick (in that order). If given a block, will call
+      # Puma, Falcon (in that order). If given a block, will call
       # with the constructed handler once we have taken the stage.
       def run!(options = {}, &block)
         unless defined?(Rackup::Handler)
           rackup_warning = <<~MISSING_RACKUP
-            Sinatra could not start, the "rackup" gem was not found!
+            Sinatra could not start, the required gems weren't found!
 
-            Add it to your bundle with:
+            Add them to your bundle with:
 
-                bundle add rackup
+                bundle add rackup puma
 
-            or install it with:
+            or install them with:
 
-                gem install rackup
+                gem install rackup puma
 
           MISSING_RACKUP
           warn rackup_warning
@@ -1819,6 +1822,7 @@ module Sinatra
         setup_logging    builder
         setup_sessions   builder
         setup_protection builder
+        setup_host_authorization builder
       end
 
       def setup_middleware(builder)
@@ -1835,7 +1839,7 @@ module Sinatra
       end
 
       def setup_null_logger(builder)
-        builder.use Rack::NullLogger
+        builder.use Sinatra::Middleware::Logger, ::Logger::FATAL
       end
 
       def setup_common_logger(builder)
@@ -1844,9 +1848,9 @@ module Sinatra
 
       def setup_custom_logger(builder)
         if logging.respond_to? :to_int
-          builder.use Rack::Logger, logging
+          builder.use Sinatra::Middleware::Logger, logging
         else
-          builder.use Rack::Logger
+          builder.use Sinatra::Middleware::Logger
         end
       end
 
@@ -1865,6 +1869,10 @@ module Sinatra
         options[:reaction] ||= :drop_session
 
         builder.use Rack::Protection, options
+      end
+
+      def setup_host_authorization(builder)
+        builder.use Rack::Protection::HostAuthorization, host_authorization
       end
 
       def setup_sessions(builder)
@@ -1961,10 +1969,25 @@ module Sinatra
     set :running_server, nil
     set :handler_name, nil
     set :traps, true
-    set :server, %w[HTTP webrick]
+    set :server, %w[webrick]
     set :bind, proc { development? ? 'localhost' : '0.0.0.0' }
     set :port, Integer(ENV['PORT'] && !ENV['PORT'].empty? ? ENV['PORT'] : 4567)
     set :quiet, false
+    set :host_authorization, ->() do
+      if development?
+        {
+          permitted_hosts: [
+            "localhost",
+            ".localhost",
+            ".test",
+            IPAddr.new("0.0.0.0/0"),
+            IPAddr.new("::/0"),
+          ]
+        }
+      else
+        {}
+      end
+    end
 
     ruby_engine = defined?(RUBY_ENGINE) && RUBY_ENGINE
 

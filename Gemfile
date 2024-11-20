@@ -22,6 +22,10 @@ puma_version = nil if puma_version.empty? || (puma_version == 'stable')
 puma_version = { github: 'puma/puma' } if puma_version == 'head'
 gem 'puma', puma_version
 
+zeitwerk_version = ENV['zeitwerk'].to_s
+zeitwerk_version = nil if zeitwerk_version.empty? || (zeitwerk_version == 'stable')
+gem 'zeitwerk', zeitwerk_version
+
 gem 'minitest', '~> 5.0'
 gem 'rack-test'
 gem 'rubocop', '~> 1.32.0', require: false
@@ -42,15 +46,16 @@ gem 'kramdown'
 gem 'liquid'
 gem 'markaby'
 gem 'nokogiri', '> 1.5.0'
+gem 'ostruct'
 gem 'pandoc-ruby', '~> 2.0.2'
 gem 'rabl'
 gem 'rdiscount', platforms: [:ruby]
 gem 'rdoc'
 gem 'redcarpet', platforms: [:ruby]
 gem 'simplecov', require: false
-gem 'slim', '~> 4'
+gem 'slim', '~> 5'
 gem 'yajl-ruby', platforms: [:ruby]
-gem 'zeitwerk'
+gem 'webrick'
 
 # sass-embedded depends on google-protobuf
 # which fails to be installed on JRuby and TruffleRuby under aarch64

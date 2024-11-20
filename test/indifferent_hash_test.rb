@@ -26,7 +26,7 @@ class TestIndifferentHashBasics < Minitest::Test
   end
 
   def test_default_object
-    hash = Sinatra::IndifferentHash.new(:a=>1, ?b=>2)
+    hash = Sinatra::IndifferentHash.new({:a=>1, ?b=>2})
     assert_equal({ :a=>1, ?b=>2 }, hash.default)
     assert_equal({ :a=>1, ?b=>2 }, hash[:a])
   end
@@ -295,5 +295,6 @@ class TestIndifferentHash < Minitest::Test
   def test_except
     hash = @hash.except(?b, 3, :simple_nested, 'nested')
     assert_equal Sinatra::IndifferentHash[a: :a], hash
+    assert_instance_of Sinatra::IndifferentHash, hash
   end if Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.0")
 end
